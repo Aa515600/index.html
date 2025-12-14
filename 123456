@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>長者樂活運動大富翁 (新題目版)</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f0fdf4;
+            overflow-x: hidden;
+        }
+
+        .board-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            grid-template-rows: repeat(5, 1fr);
+            gap: 0.5rem;
+            width: 100%;
+            max-width: 1200px;
+            aspect-ratio: 6/5;
+            margin: 0 auto;
+        }
+
+        .tile { border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); transition: transform 0.2s; }
+        .tile:hover { transform: scale(1.02); z-index: 10; }
+        
+        .pos-0 { grid-column: 1; grid-row: 1; }
+        .pos-1 { grid-column: 2; grid-row: 1; }
+        .pos-2 { grid-column: 3; grid-row: 1; }
+        .pos-3 { grid-column: 4; grid-row: 1; }
+        .pos-4 { grid-column: 5; grid-row: 1; }
+        .pos-5 { grid-column: 6; grid-row: 1; }
+        
+        .pos-6 { grid-column: 6; grid-row: 2; }
+        .pos-7 { grid-column: 6; grid-row: 3; }
+        .pos-8 { grid-column: 6; grid-row: 4; }
+        .pos-9 { grid-column: 6; grid-row: 5; }
+        
+        .pos-10 { grid-column: 5; grid-row: 5; }
+        .pos-11 { grid-column: 4; grid-row: 5; }
+        .pos-12 { grid-column: 3; grid-row: 5; }
+        .pos-13 { grid-column: 2; grid-row: 5; }
+        .pos-14 { grid-column: 1; grid-row: 5; }
+        
+        .pos-15 { grid-column: 1; grid-row: 4; }
+        .pos-16 { grid-column: 1; grid-row: 3; }
+        .pos-17 { grid-column: 1; grid-row: 2; }
+
+        .center-area {
+            grid-column: 2 / 6;
+            grid-row: 2 / 5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.05);
+        }
+
+        .player-token {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            position: absolute;
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            font-size: 14px;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .animate-bounce-custom { animation: bounce 1s infinite; }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(255, 82, 82, 0); }
+            100% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(255, 82, 82, 0); }
+        }
+        .dice-active { animation: pulse-ring 2s infinite; }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin { animation: spin 1s linear infinite; }
+
+        .big-text-shadow { text-shadow: 2px 2px 0px rgba(0,0,0,0.1); }
+        
+        /* Card Styles */
+        .card-item { transition: transform 0.2s; }
+        .card-item:hover { transform: translateY(-5px); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const apiKey = ""; // Gemini API Key will be injected by the environment
+
+        // --- PCM to WAV Converter for Gemini TTS ---
+        const pcmToWav = (base64PCM, sampleRate = 24000) => {
+            const binaryString = atob(base64PCM);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            const wavHeader = new ArrayBuffer(44);
+            const view = new DataView(wavHeader);
+            
+            // RIFF chunk descriptor
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + len, true);
+            writeString(view, 8, 'WAVE');
+            
+            // fmt sub-chunk
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+            view.setUint16(20, 1, true); // AudioFormat (1 for PCM)
+            view.setUint16(22, 1, true); // NumChannels (1 for mono)
+            view.setUint32(24, sampleRate, true); // SampleRate
+            view.setUint32(28, sampleRate * 2, true); // ByteRate
+            view.setUint16(32, 2, true); // BlockAlign
+            view.setUint16(34, 16, true); // BitsPerSample
+            
+            // data sub-chunk
+            writeString(view, 36, 'data');
+            view.setUint32(40, len, true);
+            
+            const blob = new Blob([view, bytes], { type: 'audio/wav' });
+            return URL.createObjectURL(blob);
+        };
+
+        const writeString = (view, offset, string) => {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        };
+
+        // --- Icons ---
+        const IconBase = ({ children, size = 24, className = "" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>
+        );
+        const Activity = (props) => <IconBase {...props}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></IconBase>;
+        const Brain = (props) => <IconBase {...props}><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" /><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" /></IconBase>;
+        const Trophy = (props) => <IconBase {...props}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M8 22v-4.19" /><path d="M16 22v-4.19" /><path d="M12 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z" /></IconBase>;
+        const Users = (props) => <IconBase {...props}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></IconBase>;
+        const Star = (props) => <IconBase {...props}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></IconBase>;
+        const HelpCircle = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></IconBase>;
+        const RefreshCcw = (props) => <IconBase {...props}><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 16h5v5" /></IconBase>;
+        const Play = (props) => <IconBase {...props}><polygon points="5 3 19 12 5 21 5 3" /></IconBase>;
+        const Check = (props) => <IconBase {...props}><polyline points="20 6 9 17 4 12" /></IconBase>;
+        const X = (props) => <IconBase {...props}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></IconBase>;
+        const Sparkles = (props) => <IconBase {...props}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M9 3v4"/><path d="M7 1v8"/></IconBase>;
+        const Volume2 = (props) => <IconBase {...props}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></IconBase>;
+        const Loader = (props) => <IconBase {...props} className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></IconBase>;
+        const Zap = (props) => <IconBase {...props}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></IconBase>;
+        const Gift = (props) => <IconBase {...props}><polyline points="20 12 20 22 4 22 4 12" /><rect x="2" y="7" width="20" height="5" /><line x1="12" y1="22" x2="12" y2="7" /><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" /><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" /></IconBase>;
+        const Package = (props) => <IconBase {...props}><line x1="16.5" y1="9.4" x2="7.5" y2="4.21" /><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></IconBase>;
+
+        // --- Data ---
+        const TILE_TYPES = {
+            START: { color: 'bg-yellow-400', label: '起點', icon: <Star size={32} /> },
+            EXERCISE: { color: 'bg-green-400', label: '運動', icon: <Activity size={32} /> },
+            QUIZ: { color: 'bg-blue-400', label: '問答', icon: <Brain size={32} /> },
+            GROUP: { color: 'bg-purple-400', label: '互動', icon: <Users size={32} /> },
+            LUCK: { color: 'bg-red-400', label: '機會', icon: <HelpCircle size={32} /> },
+        };
+
+        const CARD_TYPES = [
+            { id: 'bonus', name: '大補丸', type: 'SELF', desc: '直接 +10 分', icon: <Gift size={24} />, color: 'bg-pink-100 text-pink-600' },
+            { id: 'attack', name: '小惡魔', type: 'ATTACK', desc: '指定一隊 -5 分', icon: <Zap size={24} />, color: 'bg-gray-800 text-white' },
+            { id: 'double', name: '幸運星', type: 'BUFF', desc: '本回合任務分數 x2', icon: <Star size={24} />, color: 'bg-yellow-100 text-yellow-600' }
+        ];
+
+        // --- NEW UPDATED CONTENT HERE ---
+        const BOARD_CONFIG = [
+            { type: 'START', text: '出發囉' },
+            { type: 'EXERCISE', text: '頭部慢慢左右轉動 5 次', points: 10 },
+            { type: 'QUIZ', text: '哪種營養素能長肌肉？\n(蛋白質/肉蛋豆)', points: 15 },
+            { type: 'GROUP', text: '幫右邊的人搥搥背', points: 5 },
+            { type: 'EXERCISE', text: '雙手向前伸直畫圓 10 次', points: 10 },
+            { type: 'LUCK', text: '撿到幸運草，直接 +10 分', points: 10 },
+            { type: 'EXERCISE', text: '腳尖踮起來再放下 10 次', points: 10 },
+            { type: 'QUIZ', text: '曬太陽可以獲得什麼維生素？\n(維生素D)', points: 15 },
+            { type: 'GROUP', text: '和左邊的人握握手', points: 10 },
+            { type: 'EXERCISE', text: '雙手合十用力互推 10 秒', points: 5 },
+            { type: 'LUCK', text: '聽一首好聽的歌，心情好\n(直接 +15分)', points: 15 },
+            { type: 'EXERCISE', text: '坐著把腳伸直停留 5 秒', points: 10 },
+            { type: 'QUIZ', text: '發生火災要撥打幾號？\n(119)', points: 15 },
+            { type: 'GROUP', text: '對大家比個愛心手勢', points: 10 },
+            { type: 'EXERCISE', text: '手指張開再用力握拳 20 下', points: 10 },
+            { type: 'LUCK', text: '忘記帶水壺，扣 5 分', points: -5 },
+            { type: 'EXERCISE', text: '肚子縮緊深呼吸 5 次', points: 10 },
+            { type: 'QUIZ', text: '哪種水果維他命C很多？\n(芭樂/奇異果)', points: 15 },
+        ];
+
+        const TEAMS_CONFIG = [
+            { id: 0, name: '紅隊', color: 'bg-red-500', text: 'text-red-600', border: 'border-red-500' },
+            { id: 1, name: '藍隊', color: 'bg-blue-500', text: 'text-blue-600', border: 'border-blue-500' },
+            { id: 2, name: '綠隊', color: 'bg-green-500', text: 'text-green-600', border: 'border-green-500' },
+            { id: 3, name: '黃隊', color: 'bg-yellow-500', text: 'text-yellow-600', border: 'border-yellow-500' },
+        ];
+
+        // --- Components ---
+
+        const SetupScreen = ({ onStart }) => {
+            const [teamCount, setTeamCount] = useState(2);
+            return (
+                <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-b from-green-50 to-green-100 p-4">
+                    <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-lg w-full text-center border-4 border-green-200">
+                        <div className="mb-6 flex justify-center">
+                            <Activity size={80} className="text-green-600 animate-bounce-custom" />
+                        </div>
+                        <h1 className="text-5xl font-black text-gray-800 mb-2 tracking-tight">長者樂活</h1>
+                        <h2 className="text-4xl font-bold text-green-600 mb-10 big-text-shadow">運動大富翁</h2>
+                        <div className="mb-10">
+                            <p className="text-2xl text-gray-600 mb-4 font-bold">請問今天有幾組參加？</p>
+                            <div className="flex justify-center gap-4">
+                                {[2, 3, 4].map(num => (
+                                    <button key={num} onClick={() => setTeamCount(num)} className={`w-20 h-20 rounded-2xl text-4xl font-black transition-all transform ${teamCount === num ? 'bg-green-500 text-white scale-110 shadow-lg ring-4 ring-green-200' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>{num}</button>
+                                ))}
+                            </div>
+                        </div>
+                        <button onClick={() => onStart(teamCount)} className="w-full bg-orange-500 hover:bg-orange-600 text-white text-3xl font-bold py-6 rounded-2xl shadow-xl transition-transform transform active:scale-95 flex items-center justify-center gap-3">
+                            <Play size={32} fill="white" /> 開始遊戲
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // ... WinnerScreen, pcmToWav, writeString, Icons ... (reused)
+        const WinnerScreen = ({ teams, onRestart }) => {
+            const sortedTeams = [...teams].sort((a, b) => b.score - a.score);
+            const winner = sortedTeams[0];
+            return (
+                <div className="fixed inset-0 z-50 bg-black bg-opacity-80 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl p-8 max-w-2xl w-full text-center relative overflow-hidden animate-bounce-custom">
+                        <div className="absolute top-0 left-0 w-full h-4 bg-gradient-to-r from-red-400 via-yellow-400 to-blue-400"></div>
+                        <Trophy size={100} className="text-yellow-400 mx-auto mb-6" />
+                        <h2 className="text-5xl font-black text-gray-800 mb-2">恭喜！</h2>
+                        <h3 className={`text-6xl font-black mb-8 ${winner.text}`}>{winner.name} 獲勝</h3>
+                        <div className="space-y-4 mb-10">
+                            {sortedTeams.map((team, index) => (
+                                <div key={team.id} className="flex items-center justify-between bg-gray-50 p-4 rounded-xl text-2xl font-bold border-b-4 border-gray-200">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white ${index === 0 ? 'bg-yellow-400' : 'bg-gray-400'}`}>{index + 1}</div>
+                                        <span className={team.text}>{team.name}</span>
+                                    </div>
+                                    <span className="text-gray-700">{team.score} 分</span>
+                                </div>
+                            ))}
+                        </div>
+                        <button onClick={onRestart} className="bg-green-500 hover:bg-green-600 text-white text-3xl font-bold py-4 px-12 rounded-full shadow-lg transition-transform transform active:scale-95 flex items-center gap-3 mx-auto">
+                            <RefreshCcw size={32} /> 再玩一次
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Card Modal ---
+        const CardBagModal = ({ cards, onClose, onUse, teams, currentTeamId }) => {
+            const [selectedCard, setSelectedCard] = useState(null);
+            const [targetTeam, setTargetTeam] = useState(null);
+
+            const handleUse = () => {
+                if (selectedCard.type === 'ATTACK' && targetTeam === null) return;
+                onUse(selectedCard, targetTeam);
+            };
+
+            return (
+                <div className="fixed inset-0 z-50 bg-black bg-opacity-70 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-2xl shadow-2xl relative">
+                         <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={32} /></button>
+                         <h3 className="text-3xl font-black text-gray-800 mb-6 flex items-center gap-2">
+                            <Package size={32} /> 我的寶物包
+                         </h3>
+                         
+                         {cards.length === 0 ? (
+                             <div className="text-center py-10 text-gray-400 text-xl font-bold">目前沒有任何卡片喔！</div>
+                         ) : (
+                             <div className="grid grid-cols-2 gap-4 mb-6">
+                                 {cards.map((card, idx) => (
+                                     <div 
+                                        key={idx} 
+                                        onClick={() => { setSelectedCard(card); setTargetTeam(null); }}
+                                        className={`p-4 rounded-xl border-4 cursor-pointer transition-all card-item flex flex-col items-center text-center ${selectedCard === card ? 'border-orange-400 bg-orange-50' : 'border-gray-100 hover:border-orange-200'}`}
+                                     >
+                                         <div className={`p-3 rounded-full mb-2 ${card.color}`}>{card.icon}</div>
+                                         <div className="font-bold text-xl mb-1">{card.name}</div>
+                                         <div className="text-gray-500 text-sm">{card.desc}</div>
+                                     </div>
+                                 ))}
+                             </div>
+                         )}
+
+                         {selectedCard && selectedCard.type === 'ATTACK' && (
+                             <div className="mb-6 p-4 bg-gray-50 rounded-xl">
+                                 <p className="font-bold text-gray-700 mb-3 text-lg">請選擇要攻擊的隊伍：</p>
+                                 <div className="flex flex-wrap gap-2 justify-center">
+                                     {teams.filter(t => t.id !== currentTeamId).map(t => (
+                                         <button 
+                                            key={t.id}
+                                            onClick={() => setTargetTeam(t.id)}
+                                            className={`px-4 py-2 rounded-full font-bold text-lg border-2 ${targetTeam === t.id ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-600 border-gray-300'}`}
+                                         >
+                                             {t.name}
+                                         </button>
+                                     ))}
+                                 </div>
+                             </div>
+                         )}
+
+                         <div className="flex justify-end gap-3">
+                             <button onClick={onClose} className="px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100">取消</button>
+                             <button 
+                                onClick={handleUse}
+                                disabled={!selectedCard || (selectedCard.type === 'ATTACK' && targetTeam === null)}
+                                className="px-8 py-3 rounded-xl font-bold bg-green-500 text-white hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-xl shadow-lg"
+                             >
+                                使用卡片
+                             </button>
+                         </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ChallengeModal = ({ task: initialTask, team, onComplete, onClose, isDoubleScore }) => {
+            const [task, setTask] = useState(initialTask);
+            const [isGenerating, setIsGenerating] = useState(false);
+            const [isSpeaking, setIsSpeaking] = useState(false);
+            const [audioUrl, setAudioUrl] = useState(null);
+            const audioRef = useRef(null);
+
+            useEffect(() => { setTask(initialTask); setAudioUrl(null); }, [initialTask]);
+
+            const handleGenerateNewTask = async () => {
+                if (isGenerating) return;
+                setIsGenerating(true);
+                try {
+                    const typeLabel = TILE_TYPES[task.type].label;
+                    const prompt = `Context: A board game for seniors (Taiwan).
+                    Task: Generate ONE creative, safe, and fun task for the category: "${typeLabel}".
+                    Type "運動": Simple physical movement.
+                    Type "問答": Health trivia question with answer in parentheses.
+                    Type "互動": Simple social interaction.
+                    Type "機會": Opportunity/Fate card description.
+                    Format: Only the task text in Traditional Chinese (Taiwan). Keep it under 20 words.
+                    Constraints: Safe for seniors, easy to understand. No markdown.`;
+
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    });
+                    const data = await response.json();
+                    const newText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (newText) { setTask(prev => ({ ...prev, text: newText.trim() })); setAudioUrl(null); }
+                } catch (error) { console.error("AI Generation failed", error); alert("AI 產生任務失敗，請稍後再試。"); } finally { setIsGenerating(false); }
+            };
+
+            const handleSpeak = async () => {
+                if (audioUrl) { audioRef.current.play(); return; }
+                setIsSpeaking(true);
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: task.text }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } } } })
+                    });
+                    const data = await response.json();
+                    const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                    if (base64Audio) {
+                        const mimeType = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType;
+                        let sampleRate = 24000;
+                        if(mimeType && mimeType.includes("rate=")){ try { sampleRate = parseInt(mimeType.split("rate=")[1]); } catch(e) {} }
+                        const url = pcmToWav(base64Audio, sampleRate);
+                        setAudioUrl(url);
+                        setTimeout(() => { if(audioRef.current) audioRef.current.play(); }, 100);
+                    }
+                } catch (error) { console.error("TTS failed", error); alert("語音生成失敗，請稍後再試。"); } finally { setIsSpeaking(false); }
+            };
+
+            if (!task) return null;
+
+            return (
+                <div className="fixed inset-0 z-40 bg-black bg-opacity-70 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl p-6 md:p-8 max-w-3xl w-full shadow-2xl transform transition-all scale-100 border-8 border-orange-100 relative">
+                        <audio ref={audioRef} src={audioUrl} />
+                        <div className="flex justify-between items-start mb-4">
+                            <div className={`px-6 py-2 rounded-full text-white text-2xl font-bold ${team.color} flex items-center gap-2`}>
+                                {team.name} 的挑戰 {isDoubleScore && <span className="text-yellow-300 bg-black/20 px-2 rounded text-sm">分數加倍中</span>}
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={handleSpeak} disabled={isSpeaking} className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors disabled:opacity-50">
+                                    {isSpeaking ? <Loader size={20} /> : <Volume2 size={20} />} <span className="text-lg">唸給你聽</span>
+                                </button>
+                                {task.type !== 'LUCK' && (
+                                    <button onClick={handleGenerateNewTask} disabled={isGenerating} className="bg-purple-100 hover:bg-purple-200 text-purple-700 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors disabled:opacity-50">
+                                        {isGenerating ? <Loader size={20} /> : <Sparkles size={20} />} <span className="text-lg">換一個任務</span>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                        <div className="text-center mb-8">
+                            <div className="inline-block p-6 rounded-full bg-orange-100 mb-6">{task && TILE_TYPES[task.type] && TILE_TYPES[task.type].icon}</div>
+                            <h2 className="text-4xl md:text-5xl font-black text-gray-800 mb-6 leading-tight whitespace-pre-wrap min-h-[120px] flex items-center justify-center">
+                                {isGenerating ? <span className="text-gray-400 text-3xl animate-pulse">正在為您思考新任務...</span> : task.text}
+                            </h2>
+                            <p className="text-3xl font-bold text-orange-500">
+                                {task.points > 0 
+                                    ? `完成可得 ${task.points * (isDoubleScore ? 2 : 1)} 分` 
+                                    : `扣 ${Math.abs(task.points)} 分`}
+                            </p>
+                        </div>
+                        <div className="flex gap-4 justify-center">
+                            {task.points > 0 ? (
+                                <>
+                                    <button onClick={() => onComplete(false)} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-600 text-2xl font-bold py-6 rounded-2xl flex flex-col items-center gap-2">
+                                        <X size={32} /> 未完成
+                                    </button>
+                                    <button onClick={() => onComplete(true, task.points)} className="flex-[2] bg-green-500 hover:bg-green-600 text-white text-3xl font-bold py-6 rounded-2xl shadow-lg flex flex-col items-center gap-2 animate-bounce-custom">
+                                        <Check size={40} strokeWidth={4} /> 挑戰成功！
+                                    </button>
+                                </>
+                            ) : (
+                                <button onClick={() => onComplete(true, task.points)} className="w-full bg-blue-500 hover:bg-blue-600 text-white text-3xl font-bold py-6 rounded-2xl shadow-lg">
+                                    確定
+                                </button>
+                            )}
+                        </div>
+                        <p className="text-center text-gray-400 mt-4 text-xl">由老師/帶領者判定結果</p>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [gameState, setGameState] = useState('setup');
+            const [teams, setTeams] = useState([]);
+            const [currentTurn, setCurrentTurn] = useState(0);
+            const [diceValue, setDiceValue] = useState(1);
+            const [isRolling, setIsRolling] = useState(false);
+            const [moving, setMoving] = useState(false);
+            const [activeTask, setActiveTask] = useState(null);
+            
+            // New States for Cards
+            const [showCardBag, setShowCardBag] = useState(false);
+            const [doubleScoreActive, setDoubleScoreActive] = useState(false);
+            
+            const startGame = (count) => {
+                const newTeams = TEAMS_CONFIG.slice(0, count).map(t => ({ 
+                    ...t, 
+                    score: 0, 
+                    pos: 0,
+                    // Give 2 random cards initially
+                    cards: [
+                        CARD_TYPES[Math.floor(Math.random() * CARD_TYPES.length)],
+                        CARD_TYPES[Math.floor(Math.random() * CARD_TYPES.length)]
+                    ]
+                }));
+                setTeams(newTeams);
+                setGameState('playing');
+                setCurrentTurn(0);
+                setDoubleScoreActive(false);
+            };
+
+            const handleRollDice = () => {
+                if (isRolling || moving || activeTask) return;
+                setIsRolling(true);
+                let rolls = 0;
+                const maxRolls = 10;
+                const interval = setInterval(() => {
+                    setDiceValue(Math.floor(Math.random() * 6) + 1);
+                    rolls++;
+                    if (rolls >= maxRolls) {
+                        clearInterval(interval);
+                        const finalVal = Math.floor(Math.random() * 6) + 1;
+                        setDiceValue(finalVal);
+                        setIsRolling(false);
+                        movePlayer(finalVal);
+                    }
+                }, 100);
+            };
+
+            const movePlayer = (steps) => {
+                setMoving(true);
+                const currentTeam = teams[currentTurn];
+                let currentPos = currentTeam.pos;
+                let stepsLeft = steps;
+
+                const moveStep = () => {
+                    if (stepsLeft > 0) {
+                        currentPos = (currentPos + 1) % BOARD_CONFIG.length;
+                        setTeams(prev => prev.map((t, idx) => idx === currentTurn ? { ...t, pos: currentPos } : t));
+                        stepsLeft--;
+                        setTimeout(moveStep, 400);
+                    } else {
+                        setMoving(false);
+                        handleTileEvent(currentPos);
+                    }
+                };
+                moveStep();
+            };
+
+            const handleTileEvent = (pos) => {
+                const tile = BOARD_CONFIG[pos];
+                if (tile.type === 'START') {
+                    nextTurn();
+                    return;
+                }
+                setTimeout(() => { setActiveTask(tile); }, 500);
+            };
+
+            const completeTask = (success, points) => {
+                if (success) {
+                    const finalPoints = doubleScoreActive && points > 0 ? points * 2 : points;
+                    setTeams(prev => prev.map((t, idx) => idx === currentTurn ? { ...t, score: t.score + finalPoints } : t));
+                }
+                setActiveTask(null);
+                setDoubleScoreActive(false); // Reset buff
+                nextTurn();
+            };
+
+            const nextTurn = () => {
+                setCurrentTurn((prev) => (prev + 1) % teams.length);
+            };
+
+            // Card Logic
+            const useCard = (card, targetId) => {
+                const currentTeam = teams[currentTurn];
+                let newTeams = [...teams];
+                let used = false;
+
+                if (card.type === 'SELF') {
+                    // Bonus points
+                    newTeams = newTeams.map((t, i) => i === currentTurn ? { ...t, score: t.score + 10 } : t);
+                    used = true;
+                    alert(`${currentTeam.name} 使用了大補丸，直接 +10 分！`);
+                } else if (card.type === 'ATTACK') {
+                    // Attack
+                    newTeams = newTeams.map(t => t.id === targetId ? { ...t, score: t.score - 5 } : t);
+                    used = true;
+                    const targetName = teams.find(t => t.id === targetId).name;
+                    alert(`${currentTeam.name} 派出小惡魔攻擊 ${targetName}，扣 5 分！`);
+                } else if (card.type === 'BUFF') {
+                    // Double score
+                    setDoubleScoreActive(true);
+                    used = true;
+                    alert(`${currentTeam.name} 使用了幸運星，本回合任務分數加倍！`);
+                }
+
+                if (used) {
+                    // Remove card from inventory
+                    const cardIndex = currentTeam.cards.findIndex(c => c.id === card.id);
+                    const newCards = [...currentTeam.cards];
+                    newCards.splice(cardIndex, 1);
+                    
+                    newTeams[currentTurn] = { ...newTeams[currentTurn], cards: newCards };
+                    setTeams(newTeams);
+                    setShowCardBag(false);
+                }
+            };
+
+            const getTileClass = (index) => {
+                const type = BOARD_CONFIG[index].type;
+                const base = `tile pos-${index} p-2 border-2 border-white`;
+                const config = TILE_TYPES[type];
+                return `${base} ${config.color}`;
+            };
+
+            const getTokenStyle = (teamIndex, teamPos) => {
+                const playersOnTile = teams.filter(t => t.pos === teamPos);
+                const isOverlapping = playersOnTile.length > 1;
+                let transform = 'translate(0, 0)';
+                if (isOverlapping) {
+                    const offsetMap = [{ x: -8, y: -8 }, { x: 8, y: -8 }, { x: -8, y: 8 }, { x: 8, y: 8 }];
+                    const order = playersOnTile.findIndex(t => t.id === teams[teamIndex].id);
+                    transform = `translate(${offsetMap[order % 4].x}px, ${offsetMap[order % 4].y}px)`;
+                }
+                return { transform };
+            };
+
+            if (gameState === 'setup') return <SetupScreen onStart={startGame} />;
+            if (gameState === 'finished') return <WinnerScreen teams={teams} onRestart={() => setGameState('setup')} />;
+
+            const currentTeamData = teams[currentTurn];
+
+            return (
+                <div className="min-h-screen bg-green-50 p-2 md:p-4 flex flex-col items-center">
+                    <header className="w-full max-w-6xl flex justify-between items-center mb-4 bg-white p-4 rounded-2xl shadow-sm">
+                        <div className="flex items-center gap-2">
+                            <h1 className="text-2xl md:text-3xl font-black text-green-700">運動大富翁</h1>
+                            <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1">
+                                <Sparkles size={14}/> AI 輔助中
+                            </span>
+                        </div>
+                        <button onClick={() => setGameState('finished')} className="bg-gray-200 hover:bg-gray-300 text-gray-600 px-6 py-2 rounded-xl font-bold text-lg">結算成績</button>
+                    </header>
+
+                    <div className="board-grid relative mb-4">
+                        {BOARD_CONFIG.map((tile, index) => {
+                             const typeConfig = TILE_TYPES[tile.type];
+                             return (
+                                <div key={index} className={getTileClass(index)}>
+                                    <div className="text-white mb-1 opacity-80 scale-75 md:scale-100">{typeConfig.icon}</div>
+                                    <span className="text-white font-bold text-xs md:text-lg text-center leading-tight drop-shadow-md">{tile.type === 'START' ? '起點' : typeConfig.label}</span>
+                                    {tile.points && <span className="absolute top-1 right-1 bg-white text-gray-800 text-[10px] px-1 rounded-full font-bold">{tile.points}</span>}
+                                    <span className="absolute bottom-1 right-2 text-white/50 text-xs font-bold">{index}</span>
+                                </div>
+                             );
+                        })}
+                        {teams.map((team, idx) => (
+                             <div key={team.id} className={`player-token ${team.color} pos-${team.pos}`} style={{ ...getTokenStyle(idx, team.pos), zIndex: 30 + idx, margin: 'auto', width: '40px', height: '40px', fontSize: '18px' }}>{team.name[0]}</div>
+                        ))}
+                        <div className="center-area">
+                            <div className="text-center w-full">
+                                <h3 className="text-gray-500 font-bold text-xl mb-2">現在輪到</h3>
+                                <div className={`text-5xl font-black mb-4 ${currentTeamData.text} flex items-center justify-center gap-3`}>
+                                    <span className={`w-8 h-8 rounded-full ${currentTeamData.color}`}></span>
+                                    {currentTeamData.name}
+                                </div>
+                                {doubleScoreActive && <div className="text-yellow-600 font-bold mb-2 animate-bounce">🌟 分數加倍中！</div>}
+
+                                <div className="flex flex-col items-center gap-4">
+                                    <div className="relative">
+                                        <button onClick={handleRollDice} disabled={moving || activeTask} className={`w-40 h-40 rounded-full bg-gradient-to-br from-orange-400 to-red-500 shadow-[0_8px_0_rgb(194,65,12)] text-white text-4xl font-black flex flex-col items-center justify-center gap-2 transition-all active:shadow-none active:translate-y-[8px] ${(!moving && !activeTask) ? 'dice-active' : 'opacity-50 cursor-not-allowed'}`}>
+                                            <div className="text-6xl">{diceValue}</div>
+                                            <span className="text-xl">點擊擲骰</span>
+                                        </button>
+                                    </div>
+                                    
+                                    <button 
+                                        onClick={() => setShowCardBag(true)}
+                                        disabled={moving || activeTask || isRolling}
+                                        className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-transform active:scale-95 disabled:opacity-50"
+                                    >
+                                        <Package size={24} />
+                                        我的寶物 ({currentTeamData.cards.length})
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="w-full max-w-6xl grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {teams.map(team => (
+                            <div key={team.id} className={`bg-white p-4 rounded-xl shadow-sm border-l-8 ${team.border} flex justify-between items-center transition-transform ${currentTurn === team.id ? 'transform scale-105 ring-4 ring-yellow-200' : 'opacity-80'}`}>
+                                <div><span className="text-gray-500 font-bold block text-sm">隊伍</span><span className={`text-2xl font-black ${team.text}`}>{team.name}</span></div>
+                                <div className="text-right">
+                                    <span className="text-gray-500 font-bold block text-sm">得分</span>
+                                    <span className="text-3xl font-black text-gray-800">{team.score}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {activeTask && <ChallengeModal task={activeTask} team={currentTeamData} onComplete={completeTask} isDoubleScore={doubleScoreActive} />}
+                    
+                    {showCardBag && (
+                        <CardBagModal 
+                            cards={currentTeamData.cards} 
+                            onClose={() => setShowCardBag(false)}
+                            onUse={useCard}
+                            teams={teams}
+                            currentTeamId={currentTeamData.id}
+                        />
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
